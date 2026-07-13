@@ -25,7 +25,7 @@
 // Global
 // =============================================================================
 bool m_bIsRunnig = true;
-bool g_bEnableDisplay = false;  // 是否显示左右 rectify 画面（无显示器/SSH 环境请设为 false）
+bool g_bEnableDisplay = true;//false;  // 是否显示左右 rectify 画面（无显示器/SSH 环境请设为 false）
 
 ros::Publisher g_pubLeftImage;
 ros::Publisher g_pubRightImage;
