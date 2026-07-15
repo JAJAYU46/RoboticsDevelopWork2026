@@ -1,0 +1,8 @@
+prefix=/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/install
+
+Name: my_robot_cam
+Description: Description of my_robot_cam
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

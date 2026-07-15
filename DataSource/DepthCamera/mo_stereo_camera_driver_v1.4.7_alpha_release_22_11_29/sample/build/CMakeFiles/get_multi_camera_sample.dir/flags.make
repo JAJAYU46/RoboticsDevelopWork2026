@@ -6,5 +6,5 @@ CXX_FLAGS =   -std=c++11
 
 CXX_DEFINES = -DUSE_OPENCV=1
 
-CXX_INCLUDES = -I/home/jajayuros1/Documents/RobotInternship2026/RoboticsDevelopWork2026/DataSource/DepthCamera/mo_stereo_camera_driver_v1.4.7_alpha_release_22_11_29/sample/../include/mo_stereo_camera -I/home/jajayuros1/Documents/RobotInternship2026/RoboticsDevelopWork2026/DataSource/DepthCamera/mo_stereo_camera_driver_v1.4.7_alpha_release_22_11_29/sample/include -isystem /usr/include/opencv4 
+CXX_INCLUDES = -I/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/DataSource/DepthCamera/mo_stereo_camera_driver_v1.4.7_alpha_release_22_11_29/sample/../include/mo_stereo_camera -I/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/DataSource/DepthCamera/mo_stereo_camera_driver_v1.4.7_alpha_release_22_11_29/sample/include -isystem /usr/include/opencv4 
 

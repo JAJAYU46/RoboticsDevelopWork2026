@@ -1,0 +1,2 @@
+mo_stereo_camera_driver_ros_v1.1.0:my_robot_cam
+-DCATKIN_DEVEL_PREFIX=/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/devel -DCMAKE_INSTALL_PREFIX=/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/install -G Unix Makefiles

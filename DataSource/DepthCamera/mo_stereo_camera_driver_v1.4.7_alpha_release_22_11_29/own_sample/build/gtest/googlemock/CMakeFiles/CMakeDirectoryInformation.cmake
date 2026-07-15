@@ -3,7 +3,7 @@
 
 # Relative path conversion top directories.
 set(CMAKE_RELATIVE_PATH_TOP_SOURCE "/usr/src/googletest")
-set(CMAKE_RELATIVE_PATH_TOP_BINARY "/home/jajayuros1/Documents/RobotInternship2026/RoboticsDevelopWork2026/DataSource/DepthCamera/mo_stereo_camera_driver_v1.4.7_alpha_release_22_11_29/own_sample/build")
+set(CMAKE_RELATIVE_PATH_TOP_BINARY "/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/DataSource/DepthCamera/mo_stereo_camera_driver_v1.4.7_alpha_release_22_11_29/own_sample/build")
 
 # Force unix paths in dependencies.
 set(CMAKE_FORCE_UNIX_PATHS 1)
