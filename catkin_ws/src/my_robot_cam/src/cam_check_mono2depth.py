@@ -9,56 +9,54 @@ from cv_bridge import CvBridge
 import cv2
 
 import numpy as np
+from spatialmath import SO3, SE3
+from spatialmath import UnitQuaternion
 
 FOR_DEBUG = True
-# [Camera Instrincts]
-# cal_final_campara 
-#cal_kalibr
+# ==================== [Set Camera Parameters]  ====================
+# <Note>
+# 1. Calibration Result from Kalibr. 
+# 2. Variable R, t are the Rotation Matrix and Translation Matrix
+#    from left camera frame to right camera frame. (R_1r, t_lr)
+# 3. T_12: The Transformation Matrix from left cam to right cam
+
+# ==================================================================
 # Camera Matrix
-fx_l, fy_l, cx_l, cy_l = [376.72365254, 376.73224047, 310.56993772, 188.22580516]
-K_left = np.array([
-    [fx_l,   0, cx_l],
-    [   0,fy_l, cy_l],
-    [   0,   0,    1]
+fx1, fy1, cx1, cy1 = [376.72365254, 376.73224047, 310.56993772, 188.22580516] # left
+fx2, fy2, cx2, cy2 = [376.90291086 376.90015313 310.10303915 188.09722285] # right
+
+# left 
+K1 = np.array([
+    [fx1,   0, cx1],
+    [   0,fy1, cy1],
+    [   0,  0,   1]
+], dtype=np.float64)
+# right 
+K2 = np.array([
+    [fx2,   0, cx2],
+    [   0,fy2, cy2],
+    [   0,  0,   1]
 ], dtype=np.float64)
 
+
 # Distortion Factor #OpenCV distortion 順序 [k1,k2,p1,p2,k3]
-D_left = np.array([-0.00092227, -0.00535565, 0.00192026, -0.00056864], dtype=np.float64)
+D1 = np.array([-0.00092227, -0.00535565, 0.00192026, -0.00056864], dtype=np.float64)
+D2 = np.array([-0.00297347 -0.00090164  0.0019205  -0.00082069], dtype=np.float64)
 
+# Rotation # Kalibr Result q
+qx, qy, qz, qw = [-0.00004118 -0.00046356  0.00036192  0.99999983]
+q = UnitQuaternion([qw, qx, qy, qz])
+R = q.R #3x3 numpy array, Rotation Matrix
+t = np.array([ 0.06151697 -0.00000337 -0.00004902]) # Translation
+T_12 = SE3.Rt(q.R, t) # 4x4 Transformation Matrix
 
+# ========================= [Start ROS Node] ======================== 
+# <Discription>
+# Start ROS Node. This Node will get the image from /mo_camera/left/image_raw and /mo_camera/right/image_raw topic, 
+# and turn the image_l, image_r to disparity map, and then to depth map and point cloud 
+# <Note>
 
-
-# #cal_test3
-# # Camera Matrix
-# K_left = np.array([
-#     [662.975989,0,538.069450],
-#     [0,656.146131,357.357752],
-#     [0,0,1]
-# ], dtype=np.float64)
-# # Distortion Factor #OpenCV distortion 順序 [k1,k2,p1,p2,k3]
-# D_left = np.array([0.005977,-0.028316,-0.001539,-0.040968,0], dtype=np.float64)
-
-
-# cal_test2
-# # Camera Matrix
-# K_left = np.array([
-# [732.826191,0,453.859918],
-# [0,705.503816,323.094646],
-# [0,0,1]
-# ], dtype=np.float64)
-# # Distortion Factor #OpenCV distortion 順序 [k1,k2,p1,p2,k3]
-# D_left = np.array([0.198570,-0.456837,-0.007790,-0.098853,0], dtype=np.float64)
-
-# cam_test1
-# # Camera Matrix
-# K_left = np.array([
-#     [673.929818, 0.0, 507.397864],
-#     [0.0, 669.409742, 342.695492],
-#     [0.0, 0.0, 1.0]
-# ], dtype=np.float64)
-# # Distortion Factor #OpenCV distortion 順序 [k1,k2,p1,p2,k3]
-# D_left = np.array([-0.007869, 0.131069, -0.004328, -0.062251, 0.0], dtype=np.float64)
-
+# ===================================================================
 class MyNode:
 
     def __init__(self):
@@ -131,6 +129,8 @@ class MyNode:
         #rospy.loginfo("Receive right image")
         #rospy.loginfo_throttle(1, "Receive right image")
         pass
+    def undistore_image(self, img): 
+        
     def evaluate_cam_instrinct(self, img): 
         
         # 棋盤樣子

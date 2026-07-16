@@ -166,6 +166,7 @@ include_directories(
 catkin_install_python(PROGRAMS
 #   scripts/my_python_script
     src/cam_check_calibration.py
+    src/cam_check_mono2depth.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

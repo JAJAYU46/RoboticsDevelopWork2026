@@ -12,15 +12,32 @@ import numpy as np
 
 FOR_DEBUG = True
 # [Camera Instrincts]
-# cal_final_campara #cal_test3
+# cal_final_campara 
+#cal_kalibr
 # Camera Matrix
+fx_l, fy_l, cx_l, cy_l = [376.72365254, 376.73224047, 310.56993772, 188.22580516]
 K_left = np.array([
-    [662.975989,0,538.069450],
-    [0,656.146131,357.357752],
-    [0,0,1]
+    [fx_l,   0, cx_l],
+    [   0,fy_l, cy_l],
+    [   0,   0,    1]
 ], dtype=np.float64)
+
 # Distortion Factor #OpenCV distortion 順序 [k1,k2,p1,p2,k3]
-D_left = np.array([0.005977,-0.028316,-0.001539,-0.040968,0], dtype=np.float64)
+D_left = np.array([-0.00092227, -0.00535565, 0.00192026, -0.00056864], dtype=np.float64)
+
+
+
+
+# #cal_test3
+# # Camera Matrix
+# K_left = np.array([
+#     [662.975989,0,538.069450],
+#     [0,656.146131,357.357752],
+#     [0,0,1]
+# ], dtype=np.float64)
+# # Distortion Factor #OpenCV distortion 順序 [k1,k2,p1,p2,k3]
+# D_left = np.array([0.005977,-0.028316,-0.001539,-0.040968,0], dtype=np.float64)
+
 
 # cal_test2
 # # Camera Matrix

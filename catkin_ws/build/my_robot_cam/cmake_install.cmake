@@ -56,3 +56,7 @@ if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/my_robot_cam" TYPE PROGRAM FILES "/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/build/my_robot_cam/catkin_generated/installspace/cam_check_calibration.py")
 endif()
 
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/my_robot_cam" TYPE PROGRAM FILES "/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/build/my_robot_cam/catkin_generated/installspace/cam_check_mono2depth.py")
+endif()
+

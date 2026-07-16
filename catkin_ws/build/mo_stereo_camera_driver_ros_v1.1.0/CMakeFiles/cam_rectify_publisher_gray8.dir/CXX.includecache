@@ -1,0 +1,10 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/src/mo_stereo_camera_driver_ros_v1.1.0/src/camera_calibration/cam_rectify_publisher_gray8.cpp
+
