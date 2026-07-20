@@ -13,19 +13,8 @@ mo_stereo_camera_driver_ros_v1.1.0/CMakeFiles/get_imu_sample.dir/src/get_imu_sam
  /home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/src/mo_stereo_camera_driver_ros_v1.1.0/lib/mo_stereo_camera_driver/include/mo_stereo_camera/mo_stereo_camera_driver_macro_define.h
  /home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/src/mo_stereo_camera_driver_ros_v1.1.0/lib/mo_stereo_camera_driver/include/mo_stereo_camera/mo_stereo_camera_driver_type_define.h
  /home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/src/mo_stereo_camera_driver_ros_v1.1.0/src/get_imu_sample.cpp
- /opt/ros/noetic/include/cv_bridge/cv_bridge.h
  /opt/ros/noetic/include/geometry_msgs/Quaternion.h
  /opt/ros/noetic/include/geometry_msgs/Vector3.h
- /opt/ros/noetic/include/image_transport/camera_publisher.h
- /opt/ros/noetic/include/image_transport/camera_subscriber.h
- /opt/ros/noetic/include/image_transport/exception.h
- /opt/ros/noetic/include/image_transport/exports.h
- /opt/ros/noetic/include/image_transport/image_transport.h
- /opt/ros/noetic/include/image_transport/loader_fwds.h
- /opt/ros/noetic/include/image_transport/publisher.h
- /opt/ros/noetic/include/image_transport/single_subscriber_publisher.h
- /opt/ros/noetic/include/image_transport/subscriber.h
- /opt/ros/noetic/include/image_transport/transport_hints.h
  /opt/ros/noetic/include/ros/advertise_options.h
  /opt/ros/noetic/include/ros/advertise_service_options.h
  /opt/ros/noetic/include/ros/assert.h
@@ -82,11 +71,8 @@ mo_stereo_camera_driver_ros_v1.1.0/CMakeFiles/get_imu_sample.dir/src/get_imu_sam
  /opt/ros/noetic/include/ros/wall_timer.h
  /opt/ros/noetic/include/ros/wall_timer_options.h
  /opt/ros/noetic/include/rosconsole/macros_generated.h
- /opt/ros/noetic/include/sensor_msgs/CameraInfo.h
- /opt/ros/noetic/include/sensor_msgs/CompressedImage.h
  /opt/ros/noetic/include/sensor_msgs/Image.h
  /opt/ros/noetic/include/sensor_msgs/Imu.h
- /opt/ros/noetic/include/sensor_msgs/RegionOfInterest.h
  /opt/ros/noetic/include/sensor_msgs/image_encodings.h
  /opt/ros/noetic/include/std_msgs/Header.h
  /opt/ros/noetic/include/xmlrpcpp/XmlRpcDecl.h
@@ -98,8 +84,6 @@ mo_stereo_camera_driver_ros_v1.1.0/CMakeFiles/get_imu_sample.dir/src/get_imu_sam
  /usr/include/opencv4/opencv2/core/base.hpp
  /usr/include/opencv4/opencv2/core/bufferpool.hpp
  /usr/include/opencv4/opencv2/core/check.hpp
- /usr/include/opencv4/opencv2/core/core.hpp
- /usr/include/opencv4/opencv2/core/core_c.h
  /usr/include/opencv4/opencv2/core/cuda.hpp
  /usr/include/opencv4/opencv2/core/cuda.inl.hpp
  /usr/include/opencv4/opencv2/core/cuda_types.hpp
@@ -123,7 +107,6 @@ mo_stereo_camera_driver_ros_v1.1.0/CMakeFiles/get_imu_sample.dir/src/get_imu_sam
  /usr/include/opencv4/opencv2/core/saturate.hpp
  /usr/include/opencv4/opencv2/core/traits.hpp
  /usr/include/opencv4/opencv2/core/types.hpp
- /usr/include/opencv4/opencv2/core/types_c.h
  /usr/include/opencv4/opencv2/core/utility.hpp
  /usr/include/opencv4/opencv2/core/utils/instrumentation.hpp
  /usr/include/opencv4/opencv2/core/utils/tls.hpp
@@ -172,8 +155,6 @@ mo_stereo_camera_driver_ros_v1.1.0/CMakeFiles/get_imu_sample.dir/src/get_imu_sam
  /usr/include/opencv4/opencv2/highgui.hpp
  /usr/include/opencv4/opencv2/imgcodecs.hpp
  /usr/include/opencv4/opencv2/imgproc.hpp
- /usr/include/opencv4/opencv2/imgproc/imgproc.hpp
- /usr/include/opencv4/opencv2/imgproc/types_c.h
  /usr/include/opencv4/opencv2/ml.hpp
  /usr/include/opencv4/opencv2/ml/ml.inl.hpp
  /usr/include/opencv4/opencv2/objdetect.hpp

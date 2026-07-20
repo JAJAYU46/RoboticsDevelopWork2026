@@ -1,0 +1,2 @@
+/usr/bin/ar qc /home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/devel/lib/libcv_utils.a  CMakeFiles/cv_utils.dir/src/cv_utils.cc.o
+/usr/bin/ranlib /home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/devel/lib/libcv_utils.a

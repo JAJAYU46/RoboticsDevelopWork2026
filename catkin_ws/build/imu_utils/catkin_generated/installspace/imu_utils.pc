@@ -1,0 +1,8 @@
+prefix=/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/install
+
+Name: imu_utils
+Description: Description of imu_utils
+Version: 0.1.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

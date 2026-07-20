@@ -1,498 +1,507 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
-#include <time.h>
-#include <sched.h>
 #include <unistd.h>
-#include <deque>
-#include <vector>
-#include <atomic>
-#include <queue>
-#include <mutex>
-#include <condition_variable>
+#include <pthread.h>
 #include <map>
+#include <set>
+#include <queue>
+#include <vector>
 
 #include "common_function.h"
 
-// ROS
 #include <ros/ros.h>
-#include <sensor_msgs/Imu.h>
 #include <sensor_msgs/Image.h>
-#include <image_transport/image_transport.h>
-#include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/Imu.h>
+#include <sensor_msgs/image_encodings.h>
+#include <boost/make_shared.hpp>
 
-// OpenCV
-#include "opencv2/opencv.hpp"
-using namespace cv;
-using namespace std;
+// OpenCV only for 16→8 bit conversion (no imencode, very fast)
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>   // cvtColor, putText
+#include <opencv2/highgui.hpp>   // imshow, waitKey, namedWindow
 
-// ─────────────────────────────────────────────────────────────
-// Globals
-// ─────────────────────────────────────────────────────────────
-static atomic<bool> g_bRunning(true);
+// =============================================================================
+// Global
+// =============================================================================
+bool m_bIsRunnig = true;
+bool g_bEnableDisplay = false;  // 是否显示左右 rectify 画面（无显示器/SSH 环境请设为 false）
 
-static image_transport::Publisher* g_pubLeft  = nullptr;
-static image_transport::Publisher* g_pubRight = nullptr;
-static ros::Publisher* g_pubImu   = nullptr;
+ros::Publisher g_pubLeftImage;
+ros::Publisher g_pubRightImage;
+ros::Publisher g_pubImu;
 
-// ─────────────────────────────────────────────────────────────
-// IMU producer-consumer queue
-// Capture thread fills it; publish thread drains it.
-// Keeps ROS serialization cost away from capture timing.
-// ─────────────────────────────────────────────────────────────
-static queue<sensor_msgs::Imu> g_imuMsgQueue;
-static mutex                   g_imuMutex;
-static condition_variable      g_imuCV;
+uint16_t g_u16Width  = 0;
+uint16_t g_u16Height = 0;
 
-// ─────────────────────────────────────────────────────────────
-// 全域時間同步對齊（Image FrameNum -> Hardware Timestamp）
-// ─────────────────────────────────────────────────────────────
-static map<uint64_t, ros::Time> g_frameTimeMap;
-static mutex                    g_timeMapMutex;
-// 最新一筆 IMU 硬體時間戳，供 image thread fallback 使用
-static ros::Time g_latestImuStamp;
-static mutex     g_latestImuMutex;
+// =============================================================================
+// IMU record  (u64Timestamp unit: µs)
+// =============================================================================
+struct IMURecord {
+    uint64_t u64Timestamp;
+    uint64_t u64FirstTimestamp;
+    double   dTemperature;
+    double   dAccelX, dAccelY, dAccelZ;
+    double   dGyroX,  dGyroY,  dGyroZ;
+};
 
-// 輔助函式：由 IMU 執行緒寫入影像時間
-static void setFrameTimestamp(uint64_t frameNum, const ros::Time& t) {
-    lock_guard<mutex> lock(g_timeMapMutex);
-    g_frameTimeMap[frameNum] = t;
-    // 避免 map 無限制增長，保持最新 100 幀即可
-    if (g_frameTimeMap.size() > 100) {
-        g_frameTimeMap.erase(g_frameTimeMap.begin());
-    }
-}
+pthread_mutex_t               g_mapMutex = PTHREAD_MUTEX_INITIALIZER;
+std::map<uint64_t, IMURecord> g_imuMap;
+std::set<uint64_t>            g_pendingFrames;
+const size_t                  MAX_IMU_MAP_SIZE = 200;
 
-// 輔助函式：由影像執行緒讀取時間，若還沒拿到則回傳 false
-static bool getFrameTimestamp(uint64_t frameNum, ros::Time& t) {
-    lock_guard<mutex> lock(g_timeMapMutex);
-    auto it = g_frameTimeMap.find(frameNum);
-    if (it != g_frameTimeMap.end()) {
-        t = it->second;
-        return true;
-    }
-    return false;
-}
+// td statistics
+uint64_t        g_lastFrameFirstIMUTs = 0;
+double          g_tdSum               = 0.0;
+uint64_t        g_tdCount             = 0;
+uint64_t        g_dropCount           = 0;
+pthread_mutex_t g_tdMutex             = PTHREAD_MUTEX_INITIALIZER;
 
-// ─────────────────────────────────────────────────────────────
-// Encode worker queue
-// imageThreadFunc 只負責拿幀＋記時間戳，
-// Bayer 轉換 / ROS publish / display 全部丟給 encodeWorkerThread
-// 讓 CPU 密集操作遠離 IMU capture thread
-// ─────────────────────────────────────────────────────────────
-struct RawFrame {
-    uint64_t  frameNum;
+// =============================================================================
+// Publish queue: image thread enqueues rectified 8-bit Y-plane copy,
+// publish thread publishes directly (no bit-shift conversion needed).
+// Keeping the queue small (MAX=2) ensures we always publish the latest frame.
+// =============================================================================
+struct ImageFrame {
+    ros::Time            stamp;
+    uint64_t             frameNum;
+    std::vector<uint8_t> leftData;    // rectified left Y-only, 8-bit, width*height bytes
+    std::vector<uint8_t> rightData;   // rectified right Y-plane (extracted from I420), 8-bit, width*height bytes
+};
+
+std::queue<ImageFrame> g_pubQueue;
+const size_t           MAX_PUB_QUEUE = 2;
+pthread_mutex_t        g_pubMutex    = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t         g_pubCond     = PTHREAD_COND_INITIALIZER;
+
+// IMU publish queue: SDK fetch thread enqueues, IMU publish thread dequeues.
+// Decouples ms_sleep/SDK latency from ROS publish timing.
+struct ImuSample {
     ros::Time stamp;
-    cv::Mat   leftRaw16;   // CV_16UC1 Bayer
-    cv::Mat   rightRaw16;
-    uint16_t  w, h;
-    char      caFPS[32];
+    double ax, ay, az;
+    double gx, gy, gz;
 };
-static queue<RawFrame>     g_encodeQueue;
-static mutex               g_encodeMutex;
-static condition_variable  g_encodeCV;
 
-// ─────────────────────────────────────────────────────────────
-// Display queue (imshow must run in main thread)
-// ─────────────────────────────────────────────────────────────
-struct DisplayFrame { cv::Mat left; cv::Mat right; };
-struct DisplayQueue {
-    pthread_mutex_t mutex;
-    DisplayFrame    latest;
-    bool            hasFrame;
-};
-static DisplayQueue g_dispQueue = { PTHREAD_MUTEX_INITIALIZER, {}, false };
+std::queue<ImuSample> g_imuPubQueue;
+const size_t          MAX_IMU_PUB_QUEUE = 50;   // 50 samples = 250ms buffer
+pthread_mutex_t       g_imuPubMutex     = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t        g_imuPubCond      = PTHREAD_COND_INITIALIZER;
 
-static void dispQueue_push(const cv::Mat& l, const cv::Mat& r) {
-    pthread_mutex_lock(&g_dispQueue.mutex);
-    g_dispQueue.latest.left  = l.clone();
-    g_dispQueue.latest.right = r.clone();
-    g_dispQueue.hasFrame = true;
-    pthread_mutex_unlock(&g_dispQueue.mutex);
-}
-static bool dispQueue_pop(cv::Mat& l, cv::Mat& r) {
-    pthread_mutex_lock(&g_dispQueue.mutex);
-    bool had = g_dispQueue.hasFrame;
-    if (had) {
-        l = g_dispQueue.latest.left;
-        r = g_dispQueue.latest.right;
-        g_dispQueue.hasFrame = false;
+// =============================================================================
+// Helper: µs hardware timestamp → ros::Time
+// =============================================================================
+static ros::Time imuTsToRosTime(uint64_t us) {
+    static bool      inited  = false;
+    static ros::Time wallRef;
+    static uint64_t  imuRef  = 0;
+    if (!inited) {
+        wallRef = ros::Time::now();
+        imuRef  = us;
+        inited  = true;
     }
-    pthread_mutex_unlock(&g_dispQueue.mutex);
-    return had;
+    return wallRef + ros::Duration((double)((int64_t)(us - imuRef)) / 1e6);
 }
 
-// ─────────────────────────────────────────────────────────────
-// Helper: convert 16-bit Bayer → 8-bit BGR + 8-bit Gray
-// ─────────────────────────────────────────────────────────────
-static void bayerToGrayAndBGR(uint8_t* bayerData, uint16_t w, uint16_t h,
-                               cv::Mat& outGray, cv::Mat& outBGR8)
-{
-    Mat bayer16(h, w, CV_16UC1, bayerData);
-    Mat bgr16;
-    cvtColor(bayer16, bgr16, COLOR_BayerGB2BGR_EA);
-    bgr16.convertTo(outBGR8, CV_8UC3, 1.0 / 256.0);
-    cvtColor(outBGR8, outGray, COLOR_BGR2GRAY);
+// =============================================================================
+// Helper: fill and publish MONO8 Image message (shared_ptr, zero extra copy)
+// =============================================================================
+static void publishMono8(ros::Publisher& pub,
+                         std::vector<uint8_t>& data8,
+                         ros::Time stamp,
+                         const char* frame_id) {
+    auto msg = boost::make_shared<sensor_msgs::Image>();
+    msg->header.stamp    = stamp;
+    msg->header.frame_id = frame_id;
+    msg->height          = g_u16Height;
+    msg->width           = g_u16Width;
+    msg->encoding        = sensor_msgs::image_encodings::MONO8;
+    msg->is_bigendian    = 0;
+    msg->step            = g_u16Width;
+    msg->data            = std::move(data8);   // zero-copy move into message
+    pub.publish(msg);
 }
 
-// ─────────────────────────────────────────────────────────────
-// ENCODE WORKER thread
-// 從 g_encodeQueue 取出 raw frame，做 Bayer 轉換 + ROS publish + display
-// ─────────────────────────────────────────────────────────────
-void* encodeWorkerThread(void* /*arg*/) {
-    while (g_bRunning.load()) {
-        RawFrame frame;
-        {
-            unique_lock<mutex> lock(g_encodeMutex);
-            g_encodeCV.wait(lock, [] {
-                return !g_encodeQueue.empty() || !g_bRunning.load();
-            });
-            if (g_encodeQueue.empty()) continue;
-            frame = move(g_encodeQueue.front());
-            g_encodeQueue.pop();
-        }
+// =============================================================================
+// Publish thread: dequeue → publish (data already 8-bit, no conversion needed)
+// =============================================================================
+void* publishThread(void*) {
+    while (m_bIsRunnig) {
+        pthread_mutex_lock(&g_pubMutex);
+        while (g_pubQueue.empty() && m_bIsRunnig)
+            pthread_cond_wait(&g_pubCond, &g_pubMutex);
+        if (!m_bIsRunnig) { pthread_mutex_unlock(&g_pubMutex); break; }
 
-        // Bayer → Gray + BGR
-        cv::Mat leftGray, leftBGR8, rightGray, rightBGR8;
-        {
-            cv::Mat bgr16;
-            cv::cvtColor(frame.leftRaw16, bgr16, cv::COLOR_BayerGB2BGR_EA);
-            bgr16.convertTo(leftBGR8, CV_8UC3, 1.0 / 256.0);
-            cv::cvtColor(leftBGR8, leftGray, cv::COLOR_BGR2GRAY);
-        }
-        {
-            cv::Mat bgr16;
-            cv::cvtColor(frame.rightRaw16, bgr16, cv::COLOR_BayerGB2BGR_EA);
-            bgr16.convertTo(rightBGR8, CV_8UC3, 1.0 / 256.0);
-            cv::cvtColor(rightBGR8, rightGray, cv::COLOR_BGR2GRAY);
-        }
+        ImageFrame frame = std::move(g_pubQueue.front());
+        g_pubQueue.pop();
+        pthread_mutex_unlock(&g_pubMutex);
 
-        // ROS publish
-        std_msgs::Header hdrL;
-        hdrL.stamp    = frame.stamp;
-        hdrL.frame_id = "camera_left";
-        if (g_pubLeft)
-            g_pubLeft->publish(cv_bridge::CvImage(hdrL, "mono8", leftGray).toImageMsg());
+        if (g_u16Width == 0) continue;
 
-        std_msgs::Header hdrR;
-        hdrR.stamp    = frame.stamp;
-        hdrR.frame_id = "camera_right";
-        if (g_pubRight)
-            g_pubRight->publish(cv_bridge::CvImage(hdrR, "mono8", rightGray).toImageMsg());
+        // 影像在 getIMGProcess 阶段已经是 rectify 后的 8-bit Y 数据，直接发布即可
+        publishMono8(g_pubLeftImage,  frame.leftData,  frame.stamp, "mo_camera_left");
+        publishMono8(g_pubRightImage, frame.rightData, frame.stamp, "mo_camera_right");
 
-        // Display
-        // imshow 在 headless 板子上不可用且耗 CPU，已移除
-
-        ROS_INFO_THROTTLE(2.0, "Frame %lu published with synced TS. %s",
-                          frame.frameNum, frame.caFPS);
+        printf("[PUB]    FrameNum: %lu  stamp: %.6f\n",
+               frame.frameNum, frame.stamp.toSec());
     }
-    return nullptr;
+    return NULL;
 }
 
-// ─────────────────────────────────────────────────────────────
-// IMU CAPTURE thread — ~200 Hz
-//
-// 依靠 SDK 阻塞讀取硬體資料，維持硬體原生高精度頻率。
-// 使用第一個 IMU 訊號建立 ROS 系統時間與硬體時間的 Offset 基準。
-// ─────────────────────────────────────────────────────────────
-void* imuCaptureThread(void* phCameraHandle) {
-    MO_CAMERA_HANDLE hCam = *((MO_CAMERA_HANDLE*)phCameraHandle);
-    mo_imu_data* pData   = nullptr;
-    uint64_t     prevTs  = 0;
+// =============================================================================
+// Helper: td update + drop detection
+// =============================================================================
+static void updateTd(const IMURecord& rec) {
+    pthread_mutex_lock(&g_tdMutex);
+    if (g_lastFrameFirstIMUTs != 0) {
+        double td_ms = (double)(rec.u64FirstTimestamp - g_lastFrameFirstIMUTs) / 1000.0;
+        if (td_ms > 75.0) {
+            g_dropCount++;
+            ROS_WARN("Dropped frame! interval=%.1f ms (total=%lu)", td_ms, g_dropCount);
+        }
+        g_tdSum += td_ms;
+        g_tdCount++;
+    }
+    g_lastFrameFirstIMUTs = rec.u64FirstTimestamp;
+    pthread_mutex_unlock(&g_tdMutex);
+}
 
-    uint64_t lastImageFrameNum = 0;
+// =============================================================================
+// Helper: copy rectified 8-bit Y data into queue for publish thread
+// pu8Left  : rectified left image, Y-only, width*height bytes
+// pu8Right : rectified right image, YUV I420, width*height*1.5 bytes
+//            → 只取最前面的 Y plane（width*height bytes）用于 MONO8 发布
+// =============================================================================
+static void enqueueFrame(uint64_t frameNum, const IMURecord& rec,
+                         uint8_t* pu8Left, uint8_t* pu8Right) {
+    if (!pu8Left || !pu8Right || g_u16Width == 0) return;
 
-    while (g_bRunning.load() && ros::ok()) {
-        // 阻塞等待 SDK 回傳（只有此模式下 u64ImageFrameNum 才有值）
-        if (0 != moGetIMUData(hCam, &pData)) {
-            ROS_WARN_THROTTLE(1.0, "moGetIMUData failed");
-            usleep(1000);
+    size_t yBytes = (size_t)g_u16Width * g_u16Height;  // 8-bit Y plane 大小，左右图相同
+
+    ImageFrame frame;
+    frame.stamp    = imuTsToRosTime(rec.u64FirstTimestamp);
+    frame.frameNum = frameNum;
+    frame.leftData.assign(pu8Left,  pu8Left  + yBytes);
+    frame.rightData.assign(pu8Right, pu8Right + yBytes);  // 只取 I420 的 Y plane，跳过 U/V
+
+    pthread_mutex_lock(&g_pubMutex);
+    // Drop oldest if publish thread is lagging — always keep latest frame
+    while (g_pubQueue.size() >= MAX_PUB_QUEUE) {
+        g_pubQueue.pop();
+        ROS_WARN_THROTTLE(1.0, "Pub queue full, dropping old frame");
+    }
+    g_pubQueue.push(std::move(frame));
+    pthread_cond_signal(&g_pubCond);
+    pthread_mutex_unlock(&g_pubMutex);
+}
+
+// =============================================================================
+// Image thread: poll → split → enqueue → display
+// =============================================================================
+void* getIMGProcess(void* phCameraHandle) {
+    int32_t  n32Result        = 0;
+    uint64_t u64ImageFrameNum = 0;
+    uint64_t u64PrevFrameNum  = (uint64_t)-1;
+    uint8_t* pu8FrameBuffer   = NULL;
+    uint8_t* pu8OnlyY         = NULL;  // 左图：rectify 后仅 Y 分量
+    uint8_t* pu8RectifiedRightYUVI420Img = NULL;  // 右图：rectify 后 YUV I420
+    double   d8FPS            = 0.0;
+    char     caFPS[24]        = {0};
+
+    MO_CAMERA_HANDLE hCameraHandle = *((MO_CAMERA_HANDLE*)phCameraHandle);
+
+    // 切换到 RECTIFIED 模式（对应 get_rectify_sample.cpp 中的做法）
+    n32Result = moSetVideoMode(hCameraHandle, MVM_RECTIFIED);
+    if (0 != n32Result) {
+        printf("Error: moSetVideoMode failed %d\n", n32Result);
+        return NULL;
+    }
+
+    // Set fill light once before entering the polling loop.
+    n32Result = moSetFilllightType(hCameraHandle, MFT_OFF);
+    if (0 != n32Result) {
+        printf("Warning: moSetFilllightType failed %d (fill light may not be supported)\n", n32Result);
+    } else {
+        printf("Fill light turned off.\n");
+    }
+
+    // 建立显示窗口
+    if (g_bEnableDisplay) {
+        cv::namedWindow("LeftRectify",  cv::WINDOW_AUTOSIZE);
+        cv::namedWindow("RightRectify", cv::WINDOW_AUTOSIZE);
+    }
+
+    while (m_bIsRunnig) {
+        n32Result = moGetCurrentFrame(hCameraHandle, &u64ImageFrameNum, &pu8FrameBuffer);
+        if (0 != n32Result) { ms_sleep(1); continue; }
+        if (u64ImageFrameNum == u64PrevFrameNum) { ms_sleep(1); continue; }
+        u64PrevFrameNum = u64ImageFrameNum;
+
+        // 取得 rectify 后的左右影像（左：Y-only，右：YUV I420）
+        n32Result = moGetRectifiedImage(hCameraHandle, pu8FrameBuffer,
+                                         &pu8OnlyY, &pu8RectifiedRightYUVI420Img);
+        if (0 != n32Result) {
+            printf("Error: moGetRectifiedImage return %d\n", n32Result);
             continue;
         }
 
-        // 直接將硬體微秒時間戳轉為 ros::Time，不依賴 ROS wall clock
-        // 硬體單位為微秒 (us)：秒 = us / 1e6，奈秒 = (us % 1e6) * 1000
-        ros::Time stamp(
-            static_cast<uint32_t>(pData->u64Timestamp / 1000000ULL),
-            static_cast<uint32_t>((pData->u64Timestamp % 1000000ULL) * 1000ULL)
-        );
-
-        // 每包都更新最新 IMU 時間戳，供 image thread fallback 對齊
-        {
-            lock_guard<mutex> lk(g_latestImuMutex);
-            g_latestImuStamp = stamp;
-        }
-
-        // 偵測影像 FrameNum 更新，記錄硬體曝光時間戳記（阻塞模式下才有值）
-        if (pData->u64ImageFrameNum != 0 && pData->u64ImageFrameNum != lastImageFrameNum) {
-            setFrameTimestamp(pData->u64ImageFrameNum, stamp);
-            lastImageFrameNum = pData->u64ImageFrameNum;
-        }
-
-        // Gap detection
-        if (prevTs != 0) {
-            int64_t dtUs = (int64_t)pData->u64Timestamp - (int64_t)prevTs;
-            if (dtUs > 11000)
-                ROS_WARN("IMU gap: %.1f ms (frame %lu)", dtUs/1000.0, pData->u64ImageFrameNum);
-        }
-        prevTs = pData->u64Timestamp;
-
-        sensor_msgs::Imu msg;
-        msg.header.stamp    = stamp;
-        msg.header.frame_id = "imu";
-        msg.angular_velocity.x    = pData->dGyroX;
-        msg.angular_velocity.y    = pData->dGyroY;
-        msg.angular_velocity.z    = pData->dGyroZ;
-
-        msg.linear_acceleration.x = pData->dAccelX;
-        msg.linear_acceleration.y = pData->dAccelY;
-        msg.linear_acceleration.z = pData->dAccelZ;
-
-        
-        msg.orientation_covariance[0]         = -1.0;
-        msg.angular_velocity_covariance[0]    = -1.0;
-        msg.linear_acceleration_covariance[0] = -1.0;
-
-        // Push to publish queue
-        {
-            lock_guard<mutex> lock(g_imuMutex);
-            g_imuMsgQueue.push(move(msg));
-        }
-        g_imuCV.notify_one();
-    }
-    return nullptr;
-}
-
-// ─────────────────────────────────────────────────────────────
-// IMU PUBLISH thread — drains queue and calls publish()
-// ROS serialization is isolated from capture timing
-// ─────────────────────────────────────────────────────────────
-void* imuPublishThread(void* /*arg*/) {
-    while (g_bRunning.load()) {
-        unique_lock<mutex> lock(g_imuMutex);
-        g_imuCV.wait(lock, [] {
-            return !g_imuMsgQueue.empty() || !g_bRunning.load();
-        });
-        while (!g_imuMsgQueue.empty()) {
-            sensor_msgs::Imu msg = move(g_imuMsgQueue.front());
-            g_imuMsgQueue.pop();
-            lock.unlock();
-            if (g_pubImu) g_pubImu->publish(msg);
-            lock.lock();
-        }
-    }
-    // Flush remaining
-    lock_guard<mutex> lock(g_imuMutex);
-    while (!g_imuMsgQueue.empty()) {
-        if (g_pubImu) g_pubImu->publish(g_imuMsgQueue.front());
-        g_imuMsgQueue.pop();
-    }
-    return nullptr;
-}
-
-// ─────────────────────────────────────────────────────────────
-// IMAGE thread — publishes left/right images independently
-// ─────────────────────────────────────────────────────────────
-void* imageThreadFunc(void* phCameraHandle) {
-    MO_CAMERA_HANDLE hCam = *((MO_CAMERA_HANDLE*)phCameraHandle);
-
-    uint16_t w = 0, h = 0;
-    if (0 != moGetVideoResolution(hCam, &w, &h)) {
-        ROS_ERROR("moGetVideoResolution failed");
-        g_bRunning.store(false);
-        return nullptr;
-    }
-    ROS_INFO("Resolution: %u x %u", w, h);
-
-    uint64_t u64FrameNum    = 0;
-    uint8_t* pu8FrameBuf    = nullptr;
-    uint8_t* pu8Left        = nullptr;
-    uint8_t* pu8Right       = nullptr;
-    double   fps            = 0.0;
-    char     caFPS[32]      = "FPS: ...";
-
-    while (g_bRunning.load() && ros::ok()) {
-        ms_sleep(FETCH_AND_DISPLAY_TIME_LENGTH);
-
-        // 1. 抓取影像影格
-        if (0 != moGetCurrentFrame(hCam, &u64FrameNum, &pu8FrameBuf)) {
-            ROS_WARN("moGetCurrentFrame failed");
-            continue;
-        }
-
-        // 2. 核心對齊：依據 FrameNum 去 Map 撈取 IMU 幫我們記錄到的精確曝光時間
-        ros::Time imgStamp;
-        // IMU thread 是阻塞模式，可能比 image thread 慢幾毫秒才寫入 map
-        // 等待最多 200ms（40 次 × 5ms），遠大於一個 IMU 週期（5ms）
-        int retry = 0;
-        while (!getFrameTimestamp(u64FrameNum, imgStamp) && retry < 40 && g_bRunning.load()) {
-            usleep(5000);
-            retry++;
-        }
-
-        if (retry >= 40) {
-            ROS_WARN_THROTTLE(1.0, "Skipping frame %lu: No matching IMU timestamp found (waited 200ms)", u64FrameNum);
-            continue;
-        }
-
-        // 3. 拆分 raw buffer（只做指標分割，不做轉碼）
-        if (0 != moGetRawImage(hCam, pu8FrameBuf, &pu8Left, &pu8Right)) {
-            ROS_WARN("moGetRawImage failed");
-            continue;
-        }
-
-        // 4. 更新 FPS 字串
-        if (0 == moGetRealTimeFPS(hCam, &fps))
-            snprintf(caFPS, sizeof(caFPS), "FPS: %.1f", fps);
-
-        // 5. 把 raw Bayer 資料 clone 到 queue，由 encodeWorkerThread 負責轉碼與發布
-        //    imageThreadFunc 不再做任何 CPU 密集操作，避免擠壓 IMU capture thread
-        {
-            RawFrame rf;
-            rf.frameNum   = u64FrameNum;
-            rf.stamp      = imgStamp;
-            rf.w          = w;
-            rf.h          = h;
-            rf.leftRaw16  = cv::Mat(h, w, CV_16UC1, pu8Left).clone();
-            rf.rightRaw16 = cv::Mat(h, w, CV_16UC1, pu8Right).clone();
-            snprintf(rf.caFPS, sizeof(rf.caFPS), "%s", caFPS);
-
-            lock_guard<mutex> lock(g_encodeMutex);
-            // queue 太深代表 encode 跟不上，丟掉最舊的避免 lag 累積
-            if (g_encodeQueue.size() >= 3) {
-                g_encodeQueue.pop();
-                ROS_WARN_THROTTLE(2.0, "Encode queue full, dropping oldest frame");
+        // ---- 显示画面 ----
+        if (g_bEnableDisplay) {
+            // 取得即时 FPS
+            n32Result = moGetRealTimeFPS(hCameraHandle, &d8FPS);
+            if (0 != n32Result) {
+                sprintf(caFPS, "FPS: Calculating...");
+            } else {
+                sprintf(caFPS, "FPS: %.2f", d8FPS);
             }
-            g_encodeQueue.push(move(rf));
-        }
-        g_encodeCV.notify_one();
-    }
-    return nullptr;
-}
 
-// ─────────────────────────────────────────────────────────────
-// Helper: set RT priority
-// ─────────────────────────────────────────────────────────────
-static void setThreadRealtime(pthread_t thread, int priority) {
-    struct sched_param param;
-    param.sched_priority = priority;
-    int ret = pthread_setschedparam(thread, SCHED_FIFO, &param);
-    if (ret != 0)
-        ROS_WARN("Could not set RT priority %d (errno=%d). Run with sudo or add rtprio to limits.conf", priority, ret);
-    else
-        ROS_INFO("IMU capture thread set to SCHED_FIFO priority %d", priority);
-}
-
-static int makeRTAttr(pthread_attr_t& attr, int priority) {
-    pthread_attr_init(&attr);
-    if (pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED) != 0) {
-        pthread_attr_destroy(&attr); return -1;
-    }
-    if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
-        pthread_attr_destroy(&attr); return -1;
-    }
-    struct sched_param param;
-    param.sched_priority = priority;
-    if (pthread_attr_setschedparam(&attr, &param) != 0) {
-        pthread_attr_destroy(&attr); return -1;
-    }
-    return 0;
-}
-
-// ─────────────────────────────────────────────────────────────
-// main
-// ─────────────────────────────────────────────────────────────
-void usage() {
-    printf("Usage:\n"
-           "  ./raw_publisher [videoIdx]\n"
-           "  ./raw_publisher   (auto-detect)\n\n");
-}
-
-int main(int argc, char** argv) {
-    usage();
-
-    ros::init(argc, argv, "mo_camera_node");
-    ros::NodeHandle nh;
-    image_transport::ImageTransport it(nh);
-
-    image_transport::Publisher pubLeft  = it.advertise("/mo_camera/left/image_raw",  1);
-    image_transport::Publisher pubRight = it.advertise("/mo_camera/right/image_raw", 1);
-    ros::Publisher             pubImu  = nh.advertise<sensor_msgs::Imu>("/mo_camera/imu", 200);
-
-    g_pubLeft  = &pubLeft;
-    g_pubRight = &pubRight;
-    g_pubImu   = &pubImu;
-
-    printf("SDK version: %s\n", moGetSdkVersion());
-
-    MO_CAMERA_HANDLE hCam = MO_INVALID_HANDLE;
-    char caCameraPath[64];
-
-    if (0 != cameraSampleInit(argc, argv, caCameraPath)) {
-        ROS_ERROR("cameraSampleInit failed"); return -1;
-    }
-    if (0 != moOpenUVCCameraByPath(caCameraPath, &hCam)) {
-        ROS_ERROR("Failed to open camera"); return -1;
-    }
-    //if (0 != moSetVideoMode(hCam, MVM_RAW)) {
-        //ROS_ERROR("moSetVideoMode(MVM_RAW) failed");
-        //moCloseCamera(&hCam); return -2;
-    //}
-
-    ROS_INFO("mo_camera_node started. Topics:");
-    ROS_INFO("  /mo_camera/left/image_raw   (~20 Hz)");
-    ROS_INFO("  /mo_camera/right/image_raw  (~20 Hz)");
-    ROS_INFO("  /mo_camera/imu              (~200 Hz)");
-
-    ROS_INFO("Waiting for ROS time...");
-    ros::Time::waitForValid();
-    ros::Duration(0.5).sleep();
-    ROS_INFO("ROS time ready: %.3f", ros::Time::now().toSec());
-
-    // Start threads
-    pthread_t imuCapThread, imuPubThread, imgThread, encWorkerThread;
-    {
-        pthread_attr_t rtAttr;
-        bool attrOk = (makeRTAttr(rtAttr, 80) == 0);
-        int ret = pthread_create(&imuCapThread, attrOk ? &rtAttr : nullptr,
-                                 imuCaptureThread, &hCam);
-        if (attrOk) pthread_attr_destroy(&rtAttr);
-
-        if (ret != 0) {
-            // RT 權限不足導致建立失敗，改用普通優先級重試
-            ROS_WARN("pthread_create with RT priority failed (errno=%d), retrying without RT", ret);
-            ret = pthread_create(&imuCapThread, nullptr, imuCaptureThread, &hCam);
-            if (ret != 0) {
-                ROS_FATAL("pthread_create(imuCapThread) failed: %d — aborting", ret);
-                return -1;
+            if (NULL != pu8OnlyY) {
+                cv::Mat matLeftBGR;
+                cv::Mat matLeftRectify(g_u16Height, g_u16Width, CV_8UC1, pu8OnlyY);
+                cv::cvtColor(matLeftRectify, matLeftBGR, cv::COLOR_GRAY2BGR);
+                cv::putText(matLeftBGR, std::string(caFPS), cv::Point(50, 60),
+                            cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(255, 0, 0));
+                cv::imshow("LeftRectify", matLeftBGR);
             }
-            ROS_WARN("imuCaptureThread running WITHOUT RT priority. "
-                     "Consider: sudo setcap cap_sys_nice+ep <binary> or add rtprio to /etc/security/limits.conf");
+
+            if (NULL != pu8RectifiedRightYUVI420Img) {
+                cv::Mat matRightBGR;  // 1.5 = 12bits / 8bits (I420)
+                cv::Mat matRightRectify(g_u16Height * 1.5, g_u16Width, CV_8UC1,
+                                         pu8RectifiedRightYUVI420Img);
+                cv::cvtColor(matRightRectify, matRightBGR, cv::COLOR_YUV2BGR_I420);
+                cv::putText(matRightBGR, std::string(caFPS), cv::Point(50, 60),
+                            cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(255, 0, 0));
+                cv::imshow("RightRectify", matRightBGR);
+            }
+            cv::waitKey(1);  // 让窗口刷新，1ms 非阻塞
+        }
+        // ---- 显示画面结束 ----
+
+        pthread_mutex_lock(&g_mapMutex);
+        auto it = g_imuMap.find(u64ImageFrameNum);
+        if (it != g_imuMap.end()) {
+            updateTd(it->second);
+            enqueueFrame(u64ImageFrameNum, it->second,
+                         pu8OnlyY, pu8RectifiedRightYUVI420Img);
         } else {
-            ROS_INFO("imuCaptureThread created with SCHED_FIFO priority 80");
+            g_pendingFrames.insert(u64ImageFrameNum);
+            printf("\n[IMAGE]  FrameNum: %lu  (IMU queued)\n", u64ImageFrameNum);
+        }
+        pthread_mutex_unlock(&g_mapMutex);
+    }
+
+    if (g_bEnableDisplay) {
+        cv::destroyAllWindows();  // 结束前关闭窗口
+    }
+    return NULL;
+}
+
+
+// =============================================================================
+// IMU publish thread: dequeue ImuSample → publish to ROS
+// Runs independently from SDK fetch, so ms_sleep never delays publish.
+// =============================================================================
+void* imuPublishThread(void*) {
+    while (m_bIsRunnig) {
+        pthread_mutex_lock(&g_imuPubMutex);
+        while (g_imuPubQueue.empty() && m_bIsRunnig)
+            pthread_cond_wait(&g_imuPubCond, &g_imuPubMutex);
+        if (!m_bIsRunnig) { pthread_mutex_unlock(&g_imuPubMutex); break; }
+
+        ImuSample s = g_imuPubQueue.front();
+        g_imuPubQueue.pop();
+        pthread_mutex_unlock(&g_imuPubMutex);
+
+        auto imuMsg = boost::make_shared<sensor_msgs::Imu>();
+        imuMsg->header.stamp    = s.stamp;
+        imuMsg->header.frame_id = "mo_imu";
+        imuMsg->linear_acceleration.x = s.ax;
+        imuMsg->linear_acceleration.y = s.ay;
+        imuMsg->linear_acceleration.z = s.az;
+        imuMsg->angular_velocity.x    = s.gx;
+        imuMsg->angular_velocity.y    = s.gy;
+        imuMsg->angular_velocity.z    = s.gz;
+        imuMsg->orientation_covariance[0]         = -1.0;
+        imuMsg->linear_acceleration_covariance[0] = -1.0;
+        imuMsg->angular_velocity_covariance[0]    = -1.0;
+        g_pubImu.publish(imuMsg);
+    }
+    return NULL;
+}
+
+// =============================================================================
+// IMU thread
+// =============================================================================
+void* getIMUProcess(void* phCameraHandle) {
+    int32_t      n32Result  = 0;
+    mo_imu_data* pstIMUData = NULL;
+    uint64_t     lastImuTs  = 0;
+
+    while (m_bIsRunnig) {
+        ms_sleep(FETCH_IMU_TIME_LENGTH);
+
+        n32Result = moGetIMUData(*((MO_CAMERA_HANDLE*)phCameraHandle), &pstIMUData);
+        if (0 != n32Result) { printf("Error: moGetIMUData %d\n", n32Result); continue; }
+
+        double imu_dt_ms = 0.0;
+        if (lastImuTs != 0)
+            imu_dt_ms = (double)(pstIMUData->u64Timestamp - lastImuTs) / 1000.0;
+        lastImuTs = pstIMUData->u64Timestamp;
+
+        uint64_t frameNum = pstIMUData->u64ImageFrameNum;
+
+        pthread_mutex_lock(&g_mapMutex);
+        auto it = g_imuMap.find(frameNum);
+        if (it == g_imuMap.end()) {
+            IMURecord rec;
+            rec.u64Timestamp = rec.u64FirstTimestamp = pstIMUData->u64Timestamp;
+            rec.dTemperature = pstIMUData->dTemperature;
+            rec.dAccelX = pstIMUData->dAccelX;
+            rec.dAccelY = pstIMUData->dAccelY;
+            rec.dAccelZ = pstIMUData->dAccelZ;
+            rec.dGyroX  = pstIMUData->dGyroX;
+            rec.dGyroY  = pstIMUData->dGyroY;
+            rec.dGyroZ  = pstIMUData->dGyroZ;
+            g_imuMap[frameNum] = rec;
+        } else {
+            IMURecord& rec   = it->second;
+            rec.u64Timestamp = pstIMUData->u64Timestamp;
+            rec.dTemperature = pstIMUData->dTemperature;
+            rec.dAccelX = pstIMUData->dAccelX;
+            rec.dAccelY = pstIMUData->dAccelY;
+            rec.dAccelZ = pstIMUData->dAccelZ;
+            rec.dGyroX  = pstIMUData->dGyroX;
+            rec.dGyroY  = pstIMUData->dGyroY;
+            rec.dGyroZ  = pstIMUData->dGyroZ;
+        }
+
+        if (g_pendingFrames.count(frameNum)) {
+            updateTd(g_imuMap[frameNum]);
+            g_pendingFrames.erase(frameNum);
+        }
+
+        while (g_imuMap.size() > MAX_IMU_MAP_SIZE)
+            g_imuMap.erase(g_imuMap.begin());
+        pthread_mutex_unlock(&g_mapMutex);
+
+        // Enqueue IMU sample for publish thread (decoupled from SDK fetch timing)
+        ImuSample s;
+        s.stamp = imuTsToRosTime(pstIMUData->u64Timestamp);
+        s.ax = pstIMUData->dAccelX;
+        s.ay = pstIMUData->dAccelY;
+        s.az = pstIMUData->dAccelZ;
+        s.gx = pstIMUData->dGyroX;
+        s.gy = pstIMUData->dGyroY;
+        s.gz = pstIMUData->dGyroZ;
+
+        pthread_mutex_lock(&g_imuPubMutex);
+        if (g_imuPubQueue.size() >= MAX_IMU_PUB_QUEUE)
+            g_imuPubQueue.pop();  // drop oldest if buffer full
+        g_imuPubQueue.push(s);
+        pthread_cond_signal(&g_imuPubCond);
+        pthread_mutex_unlock(&g_imuPubMutex);
+
+        //printf("[IMU]    FrameNum: %lu  Timestamp: %lu us  dt: %.3f ms\n",
+               //frameNum, pstIMUData->u64Timestamp, imu_dt_ms);
+        ROS_INFO_THROTTLE(1.0, "[IMU] FrameNum: %lu dt: %.3f ms", frameNum, imu_dt_ms);
+    }
+    return NULL;
+}
+
+// =============================================================================
+// Usage
+// =============================================================================
+void usage() {
+    printf("Usage:\n");
+    printf("  ./mo_camera_ros [videoIdx] [--no-display]\n\n");
+    printf("ROS topics:\n");
+    printf("  /mo_camera/left/image_raw   MONO8 (800 KB/frame)\n");
+    printf("  /mo_camera/right/image_raw  MONO8 (800 KB/frame)\n");
+    printf("  /mo_camera/imu              200 Hz\n\n");
+    printf("Note: images are rectified 8-bit (left: Y-only, right: I420 Y-plane).\n");
+    printf("      Published directly as MONO8, no bit-shift conversion.\n");
+    printf("      Add --no-display if running headless (no X11/monitor).\n\n");
+}
+
+// =============================================================================
+// Main
+// =============================================================================
+int32_t main(int32_t argc, char** argv) {
+    ros::init(argc, argv, "mo_camera_ros");
+    ros::NodeHandle nh;
+
+    // 解析 --no-display（无显示器/SSH 环境用），并从 argv 中移除，避免影响 cameraSampleInit 解析 videoIdx
+    std::vector<char*> filteredArgv;
+    filteredArgv.push_back(argv[0]);
+    for (int32_t i = 1; i < argc; ++i) {
+        if (0 == strcmp(argv[i], "--no-display")) {
+            g_bEnableDisplay = false;
+        } else {
+            filteredArgv.push_back(argv[i]);
         }
     }
-    pthread_create(&imuPubThread,    nullptr, imuPublishThread,   nullptr);
-    pthread_create(&imgThread,       nullptr, imageThreadFunc,    &hCam);
-    pthread_create(&encWorkerThread, nullptr, encodeWorkerThread, nullptr);
+    int32_t filteredArgc = (int32_t)filteredArgv.size();
 
-    // Display disabled — headless board
+    g_pubLeftImage  = nh.advertise<sensor_msgs::Image>("/mo_camera/left/image_raw",  5);
+    g_pubRightImage = nh.advertise<sensor_msgs::Image>("/mo_camera/right/image_raw", 5);
+    g_pubImu        = nh.advertise<sensor_msgs::Imu>  ("/mo_camera/imu",             200);
 
-    // headless board — 不需要 display loop，直接等 ROS shutdown
+    usage();
+    printf("SDK version: %s\n", moGetSdkVersion());
+    printf("Display: %s\n", g_bEnableDisplay ? "ON" : "OFF (--no-display)");
+
+    MO_CAMERA_HANDLE hCameraHandle = MO_INVALID_HANDLE;
+    int32_t          n32Result     = 0;
+    char             caCameraPath[64];
+
+    if (0 != cameraSampleInit(filteredArgc, filteredArgv.data(), caCameraPath)) return -1;
+
+    n32Result = moOpenUVCCameraByPath(caCameraPath, &hCameraHandle);
+    if (0 != n32Result) { printf("Open Camera Failed %d\n", n32Result); return -1; }
+
+    n32Result = moGetVideoResolution(hCameraHandle, &g_u16Width, &g_u16Height);
+    if (0 != n32Result) {
+        printf("Get video resolution failed %d\n", n32Result);
+        moCloseCamera(&hCameraHandle); return -1;
+    }
+    printf("Resolution: %u x %u  →  MONO8: %u KB/frame\n",
+           g_u16Width, g_u16Height, g_u16Width * g_u16Height / 1024);
+
+    n32Result = moSetVideoMode(hCameraHandle, MVM_RECTIFIED);
+    if (0 != n32Result) {
+        printf("moSetVideoMode failed %d\n", n32Result);
+        moCloseCamera(&hCameraHandle); return -1;
+    }
+
+    pthread_t img_thread = -1, imu_thread = -1, pub_thread = -1, imu_pub_thread = -1;
+    pthread_create(&pub_thread,     NULL, publishThread,    NULL);
+    pthread_create(&imu_pub_thread, NULL, imuPublishThread, NULL);  // IMU publish thread (decoupled)
+    pthread_create(&img_thread,     NULL, getIMGProcess,   &hCameraHandle);
+    pthread_create(&imu_thread,     NULL, getIMUProcess,   &hCameraHandle);
+
+    printf("Publishing... Press Ctrl+C to quit.\n");
     ros::spin();
 
-    g_bRunning.store(false);
-    g_imuCV.notify_all();
-    g_encodeCV.notify_all();
+    m_bIsRunnig = false;
+    pthread_cond_broadcast(&g_pubCond);
+    pthread_cond_broadcast(&g_imuPubCond);
+    pthread_join(img_thread,     NULL);
+    pthread_join(imu_thread,     NULL);
+    pthread_join(pub_thread,     NULL);
+    pthread_join(imu_pub_thread, NULL);
 
-    pthread_join(imuCapThread,   nullptr);
-    pthread_join(imuPubThread,   nullptr);
-    pthread_join(imgThread,      nullptr);
-    pthread_join(encWorkerThread, nullptr);
-    pthread_mutex_destroy(&g_dispQueue.mutex);
+    pthread_mutex_lock(&g_tdMutex);
+    if (g_tdCount > 0) {
+        printf("\n========================================\n");
+        printf("Session summary:\n");
+        printf("  Frames  : %lu\n", g_tdCount);
+        printf("  td_avg  : %+.3f ms (~%.2f fps)\n",
+               g_tdSum / (double)g_tdCount,
+               1000.0 / (g_tdSum / (double)g_tdCount));
+        printf("  Dropped : %lu\n", g_dropCount);
+        printf("========================================\n");
+    }
+    pthread_mutex_unlock(&g_tdMutex);
 
-    moCloseCamera(&hCam);
-    ROS_INFO("Node stopped.");
+    moCloseCamera(&hCameraHandle);
     return 0;
 }

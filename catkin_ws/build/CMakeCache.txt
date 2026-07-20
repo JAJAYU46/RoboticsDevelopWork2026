@@ -336,20 +336,26 @@ CMAKE_STRIP:FILEPATH=/usr/bin/strip
 // Studio IDE projects all commands are done without /nologo.
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
+//The directory containing a CMake configuration file for Ceres.
+Ceres_DIR:PATH=/usr/lib/cmake/Ceres
+
 //Path to a program.
 DOXYGEN_EXECUTABLE:FILEPATH=/usr/bin/doxygen
 
 //Doxygen found
 DOXYGEN_FOUND:BOOL=TRUE
 
-//Path to a file.
-EIGEN_INCLUDE_DIR:PATH=/usr/include/eigen3
+//Eigen include directory
+EIGEN_INCLUDE_DIR:STRING=/usr/include/eigen3
 
 //Path to a program.
 EMPY_EXECUTABLE:FILEPATH=EMPY_EXECUTABLE-NOTFOUND
 
 //Empy script
 EMPY_SCRIPT:STRING=/usr/lib/python3/dist-packages/em.py
+
+//The directory containing a CMake configuration file for Eigen3.
+Eigen3_DIR:PATH=/usr/lib/cmake/eigen3
 
 //Path to a file.
 FLANN_INCLUDE_DIR:PATH=/usr/include
@@ -359,6 +365,12 @@ FLANN_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libflann_cpp.so
 
 //Path to a library.
 FLANN_LIBRARY_DEBUG:FILEPATH=FLANN_LIBRARY_DEBUG-NOTFOUND
+
+//Path to a file.
+GLOG_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+GLOG_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libglog.so
 
 //Path to a library.
 GMOCK_LIBRARY:FILEPATH=GMOCK_LIBRARY-NOTFOUND
@@ -670,6 +682,9 @@ _gtest_INCLUDES:FILEPATH=/usr/include/gtest/gtest.h
 //Path to a file.
 _gtest_SOURCES:FILEPATH=/usr/src/gtest/src/gtest.cc
 
+//The directory containing a CMake configuration file for actionlib_msgs.
+actionlib_msgs_DIR:PATH=/opt/ros/noetic/share/actionlib_msgs/cmake
+
 //The directory containing a CMake configuration file for camera_calibration_parsers.
 camera_calibration_parsers_DIR:PATH=/opt/ros/noetic/share/camera_calibration_parsers/cmake
 
@@ -682,14 +697,41 @@ catkin_DIR:PATH=/opt/ros/noetic/share/catkin/cmake
 //The directory containing a CMake configuration file for class_loader.
 class_loader_DIR:PATH=/opt/ros/noetic/share/class_loader/cmake
 
+//Value Computed by CMake
+code_utils_BINARY_DIR:STATIC=/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/build/code_utils
+
+//Value Computed by CMake
+code_utils_SOURCE_DIR:STATIC=/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/src/code_utils
+
 //The directory containing a CMake configuration file for cpp_common.
 cpp_common_DIR:PATH=/opt/ros/noetic/share/cpp_common/cmake
 
 //The directory containing a CMake configuration file for cv_bridge.
 cv_bridge_DIR:PATH=/opt/ros/noetic/share/cv_bridge/cmake
 
+//Dependencies for the target
+cv_utils_LIB_DEPENDS:STATIC=general;opencv_calib3d;general;opencv_core;general;opencv_dnn;general;opencv_features2d;general;opencv_flann;general;opencv_highgui;general;opencv_imgcodecs;general;opencv_imgproc;general;opencv_ml;general;opencv_objdetect;general;opencv_photo;general;opencv_stitching;general;opencv_video;general;opencv_videoio;general;opencv_aruco;general;opencv_bgsegm;general;opencv_bioinspired;general;opencv_ccalib;general;opencv_datasets;general;opencv_dnn_objdetect;general;opencv_dnn_superres;general;opencv_dpm;general;opencv_face;general;opencv_freetype;general;opencv_fuzzy;general;opencv_hdf;general;opencv_hfs;general;opencv_img_hash;general;opencv_line_descriptor;general;opencv_optflow;general;opencv_phase_unwrapping;general;opencv_plot;general;opencv_quality;general;opencv_reg;general;opencv_rgbd;general;opencv_saliency;general;opencv_shape;general;opencv_stereo;general;opencv_structured_light;general;opencv_superres;general;opencv_surface_matching;general;opencv_text;general;opencv_tracking;general;opencv_videostab;general;opencv_viz;general;opencv_ximgproc;general;opencv_xobjdetect;general;opencv_xphoto;
+
 //The directory containing a CMake configuration file for flann.
 flann_DIR:PATH=flann_DIR-NOTFOUND
+
+//The directory containing a CMake configuration file for gencpp.
+gencpp_DIR:PATH=/opt/ros/noetic/share/gencpp/cmake
+
+//The directory containing a CMake configuration file for geneus.
+geneus_DIR:PATH=/opt/ros/noetic/share/geneus/cmake
+
+//The directory containing a CMake configuration file for genlisp.
+genlisp_DIR:PATH=/opt/ros/noetic/share/genlisp/cmake
+
+//The directory containing a CMake configuration file for genmsg.
+genmsg_DIR:PATH=/opt/ros/noetic/share/genmsg/cmake
+
+//The directory containing a CMake configuration file for gennodejs.
+gennodejs_DIR:PATH=/opt/ros/noetic/share/gennodejs/cmake
+
+//The directory containing a CMake configuration file for genpy.
+genpy_DIR:PATH=/opt/ros/noetic/share/genpy/cmake
 
 //The directory containing a CMake configuration file for geometry_msgs.
 geometry_msgs_DIR:PATH=/opt/ros/noetic/share/geometry_msgs/cmake
@@ -743,6 +785,12 @@ gtest_main_LIB_DEPENDS:STATIC=general;gtest;
 //The directory containing a CMake configuration file for image_transport.
 image_transport_DIR:PATH=/opt/ros/noetic/share/image_transport/cmake
 
+//Value Computed by CMake
+imu_utils_BINARY_DIR:STATIC=/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/build/imu_utils
+
+//Value Computed by CMake
+imu_utils_SOURCE_DIR:STATIC=/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/src/imu_utils
+
 //Path to a library.
 lib:FILEPATH=/opt/ros/noetic/lib/librospack.so
 
@@ -764,6 +812,9 @@ my_robot_cam_BINARY_DIR:STATIC=/home/user/Documents/JaJaDocuments/RoboticsDevelo
 //Value Computed by CMake
 my_robot_cam_SOURCE_DIR:STATIC=/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/src/my_robot_cam
 
+//The directory containing a CMake configuration file for nav_msgs.
+nav_msgs_DIR:PATH=/opt/ros/noetic/share/nav_msgs/cmake
+
 //Path to a library.
 pkgcfg_lib_PC_FLANN_flann:FILEPATH=/usr/lib/x86_64-linux-gnu/libflann.so
 
@@ -775,6 +826,9 @@ pkgcfg_lib_PC_FLANN_lz4:FILEPATH=/usr/lib/x86_64-linux-gnu/liblz4.so
 
 //The directory containing a CMake configuration file for pluginlib.
 pluginlib_DIR:PATH=/opt/ros/noetic/share/pluginlib/cmake
+
+//Dependencies for the target
+pnp_LIB_DEPENDS:STATIC=general;opencv_calib3d;general;opencv_core;general;opencv_dnn;general;opencv_features2d;general;opencv_flann;general;opencv_highgui;general;opencv_imgcodecs;general;opencv_imgproc;general;opencv_ml;general;opencv_objdetect;general;opencv_photo;general;opencv_stitching;general;opencv_video;general;opencv_videoio;general;opencv_aruco;general;opencv_bgsegm;general;opencv_bioinspired;general;opencv_ccalib;general;opencv_datasets;general;opencv_dnn_objdetect;general;opencv_dnn_superres;general;opencv_dpm;general;opencv_face;general;opencv_freetype;general;opencv_fuzzy;general;opencv_hdf;general;opencv_hfs;general;opencv_img_hash;general;opencv_line_descriptor;general;opencv_optflow;general;opencv_phase_unwrapping;general;opencv_plot;general;opencv_quality;general;opencv_reg;general;opencv_rgbd;general;opencv_saliency;general;opencv_shape;general;opencv_stereo;general;opencv_structured_light;general;opencv_superres;general;opencv_surface_matching;general;opencv_text;general;opencv_tracking;general;opencv_videostab;general;opencv_viz;general;opencv_ximgproc;general;opencv_xobjdetect;general;opencv_xphoto;general;ceres;
 
 //The directory containing a CMake configuration file for rosconsole.
 rosconsole_DIR:PATH=/opt/ros/noetic/share/rosconsole/cmake
@@ -986,7 +1040,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=6
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=8
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -1031,6 +1085,8 @@ CMAKE_UNAME:INTERNAL=/usr/bin/uname
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: EIGEN_INCLUDE_DIR
 EIGEN_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: Eigen3_DIR
+Eigen3_DIR-ADVANCED:INTERNAL=1
 //Details about finding Boost
 FIND_PACKAGE_MESSAGE_DETAILS_Boost:INTERNAL=[/usr/include][cfound components: system filesystem date_time iostreams regex ][v1.71.0(1.55.0)]
 //Details about finding Eigen
@@ -1097,6 +1153,10 @@ FIND_PACKAGE_MESSAGE_DETAILS_PythonInterp:INTERNAL=[/usr/bin/python3][v3.8.10()]
 FIND_PACKAGE_MESSAGE_DETAILS_Qhull:INTERNAL=[optimized;/usr/lib/x86_64-linux-gnu/libqhull.so;debug;/usr/lib/x86_64-linux-gnu/libqhull.so][/usr/include][v()]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
+//ADVANCED property for variable: GLOG_INCLUDE_DIR
+GLOG_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GLOG_LIBRARY
+GLOG_LIBRARY-ADVANCED:INTERNAL=1
 GMOCK_FROM_SOURCE_FOUND:INTERNAL=TRUE
 GMOCK_FROM_SOURCE_INCLUDE_DIRS:INTERNAL=/usr/src/googletest/googlemock/include
 GMOCK_FROM_SOURCE_LIBRARIES:INTERNAL=gmock

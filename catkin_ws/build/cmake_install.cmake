@@ -146,6 +146,8 @@ endif()
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
   include("/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/build/gtest/cmake_install.cmake")
+  include("/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/build/imu_utils/cmake_install.cmake")
+  include("/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/build/code_utils/cmake_install.cmake")
   include("/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/build/mo_stereo_camera_driver_ros_v1.1.0/cmake_install.cmake")
   include("/home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/build/my_robot_cam/cmake_install.cmake")
 

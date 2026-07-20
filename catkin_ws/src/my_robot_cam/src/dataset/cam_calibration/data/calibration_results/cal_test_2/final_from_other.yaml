@@ -1,0 +1,23 @@
+cam0:
+  cam_overlaps: [1]
+  camera_model: pinhole
+  distortion_coeffs: [-0.01183535, 0.00153516, -0.00004938, -0.00115652]
+  distortion_model: radtan
+  intrinsics: [369.92651338, 370.28325835, 309.3031603, 185.00878689]
+  resolution: [640, 360]
+  rostopic: /mo_camera/left/image_raw
+
+cam1:
+  T_cn_cnm1:
+  - [0.9999861, 0.0000787, 0.0052771, -0.06021562]
+  - [-0.0000891, 0.9999999, 0.0005892, -0.00009289]
+  - [-0.0052769, -0.0005897, 0.9999860, -0.00070634]
+  - [0.0, 0.0, 0.0, 1.0]
+
+  cam_overlaps: [0]
+  camera_model: pinhole
+  distortion_coeffs: [-0.01086885, -0.00150152, -0.00013315, -0.00004777]
+  distortion_model: radtan
+  intrinsics: [369.29576104, 369.68653594, 310.98798053, 185.41138364]
+  resolution: [640, 360]
+  rostopic: /mo_camera/right/image_raw

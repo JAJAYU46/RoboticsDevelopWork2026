@@ -1,0 +1,2 @@
+/usr/bin/ar qc /home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/devel/lib/libpolynomial.a  CMakeFiles/polynomial.dir/src/math_utils/Polynomial.cpp.o
+/usr/bin/ranlib /home/user/Documents/JaJaDocuments/RoboticsDevelopWork2026/catkin_ws/devel/lib/libpolynomial.a

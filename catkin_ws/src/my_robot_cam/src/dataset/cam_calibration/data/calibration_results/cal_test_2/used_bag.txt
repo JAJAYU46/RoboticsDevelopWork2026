@@ -1,0 +1,1 @@
+Used bag: src/my_robot_cam/src/dataset/cam_calibration/data/calibration_results/cal_final/final_for_calibration.bag
