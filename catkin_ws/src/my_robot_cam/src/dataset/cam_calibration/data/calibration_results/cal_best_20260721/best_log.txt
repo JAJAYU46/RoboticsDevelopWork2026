@@ -1,0 +1,17 @@
+[Best Log]
+This File is used to recorded the history and some details about the best calubration results
+=============================================================================================
+[20260721]
+- Current Best CAM calibration: /cal_test_4, 
+    using 
+    Bag: src/my_robot_cam/src/dataset/cam_calibration/data/recorded_rosbag/2026-07-21-15-09-27.bag
+    Target file.yaml: apriltag 6x6 
+- Current Best CAM-IMU calibration: /cal_test_1, 
+    using 
+    Bag: src/my_robot_cam/src/dataset/cam_calibration/data/recorded_rosbag_camimu/2026-07-21-14-24-06.bag 
+    IMU instrinct calibration.yaml: using default imu_utils/data/monot_for_cam_imu/imu_for_kalibr.yaml
+    Camera_calibration result.yaml: /cal_test_4
+    Target file.yaml: apriltag 6x6 
+---------------------------------------------------------------------------------------------
+[20260721] 目前最好其實是camimu /cal_test_2
+用的是cam /cal_test_4的參數
